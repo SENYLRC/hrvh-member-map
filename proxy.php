@@ -1,27 +1,18 @@
 <?php
 // proxy.php
-// Simple read-only proxy to Airtable for a map
+// Simple read-only proxy to Airtable for HRVH map
 
 // *** SECURITY NOTE ***
-// Restrict this file to your own domain/origin to prevent outside people from loading your airtable data
+// ) Restrict this file to your own domain/origin if you like
 
 
 header('Content-Type: application/json');
 
-
-// ---- LOCK TO LOCALHOST ONLY ----
-$remoteIp = $_SERVER['REMOTE_ADDR'] ?? '';
-
-if ($remoteIp !== '127.0.0.1' && $remoteIp !== '::1') {
-    http_response_code(403);
-    echo json_encode(['error' => 'Forbidden: localhost only']);
-    exit;
-}
-
-$airtableToken = '<your token>';
-$baseId  = '<your baseid>';
-$tableId = '<your baseid>';
-$view    = urlencode('Grid View');  
+// TODO: put your Airtable PAT here:
+$airtableToken = 'YOUR_AIRTABLE_PAT_HERE';
+$baseId  = 'YOUR_BASE_ID';
+$tableId = 'YOUR_TABLE_ID';
+$view    = urlencode('Grid View');
 
 $url = "https://api.airtable.com/v0/{$baseId}/{$tableId}?view={$view}&pageSize=100";
 
