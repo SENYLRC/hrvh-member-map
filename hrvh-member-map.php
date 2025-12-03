@@ -152,7 +152,7 @@ function showError(name, addr, status){
 function buildPopup(name, addr, f){
   let dig  = f["Dig Col URL"]       || "",
       news = f["Newspaper URL"]     || "",
-      fa   = f["Finding Aid URL"]   || f["Finding Air URL"] || "",
+      fa   = f["Finding Aid URL"]   || "",
       exh  = f["Exhibit URL"]       || "",
       logo = f["Map Logo"]          || "";
 
