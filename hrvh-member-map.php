@@ -1,13 +1,15 @@
-
 <?php
 /*
 Plugin Name: HRVH Member Map
 Description: Displays an HRVH member map using Google Maps and Airtable data.
-Version: 5.7
+Version: 5.8
 Author: HRVH
 */
 
 if (!defined('ABSPATH')) exit;
+
+// Include the Airtable helper (same folder)
+require_once __DIR__ . '/proxy.php';
 
 /* -----------------------------------------------------------
    LOAD CSS SAFELY (not inline)
@@ -68,8 +70,22 @@ function hrvh_member_map_css() {
 ------------------------------------------------------------ */
 add_shortcode('hrvh_member_map', function () {
 
-ob_start();
-?>
+    // Server-side call to Airtable via helper
+    $airtable = hrvh_get_airtable_map_data();
+
+    if (!$airtable || !isset($airtable['records']) || !is_array($airtable['records'])) {
+        // Fail gracefully
+        return '<div id="hrvh-map-errors" style="color:#b00000;background:#fff3f3;padding:10px;border:1px solid #e0b4b4;">
+                    Map data is temporarily unavailable. Please try again later.
+                </div>
+                <div id="hrvh-map"></div>';
+    }
+
+    // Use wp_json_encode for safety
+    $records_json = wp_json_encode($airtable['records']);
+
+    ob_start();
+    ?>
 
 <div id="hrvh-map-errors"></div>
 <div id="hrvh-map">Loading map…</div>
@@ -78,9 +94,11 @@ ob_start();
 /* =============================================================================
    CONFIG
 ============================================================================= */
-const AIRTABLE_URL  = "/wp-content/plugins/hrvh-member-map/proxy.php";
 const LOGO_BASE     = "https://hrvh.org/wp-content/uploads/maps_logo/";
 const GEO_CACHE_KEY = "hrvh_map_geocodes";
+
+// Data injected by PHP
+window.HRVH_MAP_DATA = <?php echo $records_json; ?>;
 
 // Read site from hash: /map/#nmbries
 function getCurrentSiteFromHash(){
@@ -122,13 +140,11 @@ function showError(name, addr, status){
       </div><hr>`;
   }
 
-  // Also update the map div so it's obvious something went wrong
   const mapDiv = document.getElementById('hrvh-map');
   if (mapDiv && mapDiv.innerText.indexOf('Loading map') !== -1) {
     mapDiv.innerText = 'Map data is temporarily unavailable. Please try again later.';
   }
 }
-
 
 /* =============================================================================
    POPUP BUILDER
@@ -163,8 +179,7 @@ function buildPopup(name, addr, f){
    GLOBALS
 ============================================================================= */
 let map, geocoder, openInfo = null;
-// registry of code → { marker, info }
-const HRVH_MARKERS = {};
+const HRVH_MARKERS = {}; // registry of code → { marker, info }
 
 /* =============================================================================
    GEOCODE CACHE
@@ -218,56 +233,16 @@ window.initHRVHMap = function() {
   });
 
   geocoder = new google.maps.Geocoder();
-  loadAirtable();
-};
 
-/* =============================================================================
-   LOAD AIRTABLE
-============================================================================= */
-function loadAirtable(){
-
-  const cacheKey     = "hrvh_map_cache";
-  const cacheTimeKey = "hrvh_map_cache_time";
-  const maxAge       = 1000 * 60 * 60 * 24; // 24 hours
-
-  const now        = Date.now();
-  const cached     = localStorage.getItem(cacheKey);
-  const cachedTime = localStorage.getItem(cacheTimeKey);
-
-  if(cached && cachedTime && (now - cachedTime < maxAge)){
-    console.log("⚡ Using cached Airtable");
-    try {
-      const parsed = JSON.parse(cached);
-      buildMarkers(parsed.records || []);
-    } catch(e){
-      console.warn("Cached Airtable data was invalid, refetching...", e);
-      localStorage.removeItem(cacheKey);
-      localStorage.removeItem(cacheTimeKey);
-      loadAirtable(); // retry once without cache
-    }
+  // Use server-injected data instead of fetching via AJAX
+  const records = Array.isArray(window.HRVH_MAP_DATA) ? window.HRVH_MAP_DATA : [];
+  if (!records.length) {
+    showError("Airtable", "HRVH Member Map", "NO_RECORDS");
     return;
   }
 
-  fetch(AIRTABLE_URL)
-    .then(r => {
-      if (!r.ok) {
-        // Proxy returned a non-2xx HTTP code
-        throw new Error("Proxy HTTP " + r.status + " " + r.statusText);
-      }
-      return r.json();
-    })
-    .then(d => {
-      if (!d || !Array.isArray(d.records)) {
-        throw new Error("Proxy responded but records array is missing");
-      }
-      localStorage.setItem(cacheKey, JSON.stringify(d));
-      localStorage.setItem(cacheTimeKey, now);
-      buildMarkers(d.records);
-    })
-    .catch(err => {
-      showError("Airtable Proxy", AIRTABLE_URL, err && err.message ? err.message : err);
-    });
-}
+  buildMarkers(records);
+};
 
 /* =============================================================================
    CREATE MARKERS
@@ -283,7 +258,6 @@ function buildMarkers(recs){
       content: buildPopup(name,addr,f)
     });
 
-    // register for later hash-based focusing
     if (code) {
       HRVH_MARKERS[code] = { marker, info };
     }
@@ -293,7 +267,6 @@ function buildMarkers(recs){
       openInfo = info;
       info.open(map,marker);
 
-      // Update URL hash so you can copy/share it
       if (code) {
         window.location.hash = code;
       }
@@ -302,7 +275,6 @@ function buildMarkers(recs){
 
   function next(){
     if(i >= recs.length) {
-      // Once all markers are created, if we have a SITE from hash, focus it
       if (SITE) {
         focusHRVHSite(SITE);
       }
@@ -313,7 +285,7 @@ function buildMarkers(recs){
     let name = f["Organization"]  || "";
     let addr = f["Whole Address"] || "";
     let logo = f["Map Logo"]      || "";
-    let code = cleanCode(logo);   // slug based on logo filename
+    let code = cleanCode(logo);
 
     if(!addr || addr.length < 5){
       showError(name, addr, "EMPTY_ADDRESS");
@@ -348,10 +320,10 @@ function buildMarkers(recs){
 
 <!-- Google Maps loader -->
 <script
-  src="https://maps.googleapis.com/maps/api/js?key=<Google API Key>&callback=initHRVHMap&loading=async"
+  src="https://maps.googleapis.com/maps/api/js?key=<your google API Key>&callback=initHRVHMap&loading=async"
   async defer>
 </script>
 
 <?php
-return ob_get_clean();
+    return ob_get_clean();
 });
