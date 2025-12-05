@@ -4,6 +4,8 @@ You will also an Airtable subsciption, and have a token, along with the baseid a
 
 You can get the Google API Credentials at https://console.cloud.google.com/apis/credentials
 
+You can get Airtable Tokens at  https://airtable.com/create/tokens
+
 Airtable tools to help with ids
 
 https://codepen.io/airtable/full/MeXqOg
